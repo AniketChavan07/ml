@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
-import joblib
 import numpy as np
+import joblib
 import matplotlib.pyplot as plt
 
 # === Page Config ===
@@ -20,43 +20,38 @@ except Exception as e:
     st.error(f"❌ Error loading model: {e}")
     st.stop()
 
-# === Input Fields ===
+# === Input fields ===
 st.markdown("### 📋 Enter Match Details")
 
+match_id = st.text_input("Match ID", "1001")
+date = st.date_input("Date")
 home_team = st.selectbox("Home Team", [
     "Mumbai Indians", "Chennai Super Kings", "Royal Challengers Bangalore",
-    "Kolkata Knight Riders", "Delhi Capitals", "Rajasthan Royals",
-    "Punjab Kings", "Sunrisers Hyderabad", "Gujarat Titans", "Lucknow Super Giants"
+    "Kolkata Knight Riders", "Rajasthan Royals", "Delhi Capitals",
+    "Sunrisers Hyderabad", "Punjab Kings", "Gujarat Titans", "Lucknow Super Giants"
 ])
-
 away_team = st.selectbox("Away Team", [
-    "Chennai Super Kings", "Mumbai Indians", "Royal Challengers Bangalore",
-    "Kolkata Knight Riders", "Delhi Capitals", "Rajasthan Royals",
-    "Punjab Kings", "Sunrisers Hyderabad", "Gujarat Titans", "Lucknow Super Giants"
+    "Mumbai Indians", "Chennai Super Kings", "Royal Challengers Bangalore",
+    "Kolkata Knight Riders", "Rajasthan Royals", "Delhi Capitals",
+    "Sunrisers Hyderabad", "Punjab Kings", "Gujarat Titans", "Lucknow Super Giants"
 ])
-
 tournament_phase = st.selectbox("Tournament Phase", ["League", "Qualifier", "Eliminator", "Final"])
 day_of_week = st.selectbox("Day of Week", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
 time_slot = st.selectbox("Time Slot", ["Afternoon", "Evening", "Night"])
-city = st.selectbox("City", ["Mumbai", "Chennai", "Delhi", "Bangalore", "Kolkata", "Hyderabad", "Jaipur", "Ahmedabad", "Lucknow", "Pune"])
+city = st.selectbox("City", ["Mumbai", "Delhi", "Chennai", "Kolkata", "Bangalore", "Hyderabad", "Jaipur", "Ahmedabad", "Lucknow"])
 broadcaster = st.selectbox("Broadcaster", ["Star Sports", "Jio Cinema", "Sony Sports", "Hotstar"])
+past_viewership_avg_millions = st.number_input("Past Viewership Avg (Millions)", min_value=0.0, value=4.5)
+viewership_tv_millions = st.number_input("Viewership TV (Millions)", min_value=0.0, value=3.5)
+viewership_digital_millions = st.number_input("Viewership Digital (Millions)", min_value=0.0, value=2.0)
+total_viewership_millions = st.number_input("Total Viewership (Millions)", min_value=0.0, value=5.5)
+marquee_match = st.selectbox("Marquee Match (1=Yes, 0=No)", [0, 1])
+rivalry_match = st.selectbox("Rivalry Match (1=Yes, 0=No)", [0, 1])
+weather_rain = st.selectbox("Weather Rain (1=Yes, 0=No)", [0, 1])
 
-past_viewership_avg_millions = st.slider("Past Viewership Avg (Millions)", 0.0, 10.0, 4.5, 0.1)
-viewership_tv_millions = st.slider("Viewership TV (Millions)", 0.0, 10.0, 3.5, 0.1)
-viewership_digital_millions = st.slider("Viewership Digital (Millions)", 0.0, 10.0, 2.0, 0.1)
-total_viewership_millions = st.slider("Total Viewership (Millions)", 0.0, 15.0, 5.5, 0.1)
-marquee_match = st.selectbox("Marquee Match", ["No", "Yes"])
-rivalry_match = st.selectbox("Rivalry Match", ["No", "Yes"])
-weather_rain = st.selectbox("Weather Rain", ["No", "Yes"])
-past_ad_inventory_price = st.number_input("Past Ad Inventory Price (Lakhs)", min_value=0.0, value=50.0)
-
-# Convert Yes/No to 0/1
-marquee_match = 1 if marquee_match == "Yes" else 0
-rivalry_match = 1 if rivalry_match == "Yes" else 0
-weather_rain = 1 if weather_rain == "Yes" else 0
-
-# === Prepare Input Data ===
+# === Prepare input data ===
 input_data = {
+    "match_id": match_id,
+    "date": str(date),
     "home_team": home_team,
     "away_team": away_team,
     "tournament_phase": tournament_phase,
@@ -73,6 +68,7 @@ input_data = {
     "weather_rain": weather_rain
 }
 
+# Convert to DataFrame
 input_df = pd.DataFrame([input_data])
 
 # === Encode categorical columns ===
@@ -83,45 +79,39 @@ for col, le in label_encoders.items():
         except Exception:
             input_df[col] = le.transform([le.classes_[0]])[0]
 
-# Ensure correct feature order
-input_df = input_df[features]
+# === Align input DataFrame with model features ===
+try:
+    available_features = [f for f in features if f in input_df.columns]
+    input_df = input_df[available_features]
 
-# === Prediction Button ===
+    # Add missing columns with zeros
+    for f in features:
+        if f not in input_df.columns:
+            input_df[f] = 0
+
+    input_df = input_df[features]
+except Exception as e:
+    st.error(f"Feature alignment error: {e}")
+    st.write("Input columns:", list(input_df.columns))
+    st.write("Expected features:", features)
+    st.stop()
+
+# === Predict Button ===
 if st.button("🎯 Predict Advertisement Price"):
     try:
-        predicted_price = model.predict(input_df)[0]
+        prediction = model.predict(input_df)[0]
+        st.success(f"💰 **Predicted Ad Inventory Price:** ₹ {prediction:.2f} Lakhs")
 
-        st.markdown(f"## 💰 Predicted Ad Price: ₹ **{predicted_price:.2f} Lakhs**")
+        # === Plot Graph: Past vs Predicted ===
+        previous_price = past_viewership_avg_millions * 10  # Example: scaling factor
+        categories = ["Previous Avg Ad Price", "Predicted Ad Price"]
+        values = [previous_price, prediction]
 
-        # === Comparison Graph: Past vs Predicted ===
-        st.markdown("### 📊 Comparison: Past vs Predicted Ad Inventory Price")
-
-        fig, ax = plt.subplots(figsize=(5, 4))
-        bars = ax.bar(["Past Price", "Predicted Price"], [past_ad_inventory_price, predicted_price],
-                      color=["skyblue", "mediumseagreen"])
-        ax.set_ylabel("Price (Lakhs)")
-        ax.set_title("Ad Inventory Price Comparison")
-
-        # Add price labels on bars
-        for bar in bars:
-            yval = bar.get_height()
-            ax.text(bar.get_x() + bar.get_width() / 2, yval + 1, f"₹ {yval:.2f}", ha='center', fontsize=10)
-
+        fig, ax = plt.subplots()
+        ax.bar(categories, values)
+        ax.set_ylabel("Ad Price (Lakhs)")
+        ax.set_title("📊 Comparison: Previous vs Predicted Ad Inventory Price")
         st.pyplot(fig)
-
-        # === Feature Importance Graph ===
-        st.markdown("### 🔍 Top 10 Influencing Features")
-        importance = model.feature_importances_
-        imp_df = pd.DataFrame({"Feature": features, "Importance": importance})
-        imp_df = imp_df.sort_values(by="Importance", ascending=False).head(10)
-
-        fig2, ax2 = plt.subplots(figsize=(8, 4))
-        ax2.barh(imp_df["Feature"], imp_df["Importance"], color="royalblue")
-        ax2.set_xlabel("Importance")
-        ax2.set_ylabel("Feature")
-        ax2.invert_yaxis()
-        ax2.set_title("Top Feature Importance")
-        st.pyplot(fig2)
 
     except Exception as e:
         st.error(f"❌ Error during prediction: {e}")
